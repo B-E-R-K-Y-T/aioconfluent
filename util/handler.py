@@ -37,7 +37,9 @@ def get_function_metadata(handler: Callable):
         raise ValueError(f"Handler {handler.__name__} must have 'message' argument")
 
     if message.annotation is not Message:
-        raise ValueError(f"Handler {handler.__name__} must have 'message' argument of type Message")
+        raise ValueError(
+            f"Handler {handler.__name__} must have 'message' argument of type Message"
+        )
 
     return HandlerSignature(
         value=value,

@@ -12,6 +12,7 @@ class DefaultParser(AbstractParser):
     def parse(self, data: bytes) -> dict:
         return {"body": data.decode()}
 
+
 class ORjsonParser(AbstractParser):
     def parse(self, data: bytes) -> dict:
         return orjson.loads(data)

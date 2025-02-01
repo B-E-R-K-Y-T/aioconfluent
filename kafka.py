@@ -18,12 +18,12 @@ from util.util import gen_unique_id, run_async_thread
 
 class Kafka:
     def __init__(
-            self,
-            kafka_config: KafkaConfig = KafkaConfig(),
-            *,
-            name: str = f"aio-confluent-kafka-client-{gen_unique_id()}",
-            order_processing: bool = False,
-            default_parser: Type[AbstractParser] = DefaultParser,
+        self,
+        kafka_config: KafkaConfig = KafkaConfig(),
+        *,
+        name: str = f"aio-confluent-kafka-client-{gen_unique_id()}",
+        order_processing: bool = False,
+        default_parser: Type[AbstractParser] = DefaultParser,
     ):
         self._kafka_config = kafka_config
         self._publisher_config = {
@@ -50,7 +50,9 @@ class Kafka:
     async def publish(self, message: Message):
         return await self._publisher.publish(message.topic, message.value)
 
-    async def create_publisher(self, bootstrap_servers: Optional[Union[str, list]] = None) -> Publisher:
+    async def create_publisher(
+        self, bootstrap_servers: Optional[Union[str, list]] = None
+    ) -> Publisher:
         if bootstrap_servers is None:
             bootstrap_servers = self._kafka_config.bootstrap_servers
 
@@ -59,9 +61,7 @@ class Kafka:
     def subscribe(self, topics: list[str]) -> Subscriber:
         subscriber = Subscriber(
             topics=topics,
-            reader=Reader(
-                self._kafka_config.reader
-            ),
+            reader=Reader(self._kafka_config.reader),
         )
 
         if topics in [c.topics for c in self._consumers]:
@@ -76,7 +76,9 @@ class Kafka:
         subscriber = self.subscribe(topics)
 
         def decorator(func: Callable):
-            self._handlers.append(Handler(func, subscriber, get_function_metadata(func)))
+            self._handlers.append(
+                Handler(func, subscriber, get_function_metadata(func))
+            )
             return func
 
         return decorator
@@ -114,7 +116,9 @@ class Kafka:
             raise BackgroundProcessingException(e) from e
 
     @staticmethod
-    def _validate(handler: Handler, consume_message: Message, handler_annotations) -> BaseModel:
+    def _validate(
+        handler: Handler, consume_message: Message, handler_annotations
+    ) -> BaseModel:
         validator: Type[BaseModel] = handler_annotations["value"]
 
         if not isinstance(validator, type(BaseModel)):
@@ -145,9 +149,11 @@ class Kafka:
                 )
 
                 if handler.signature.annotations:
-                    if handler.signature.annotations["value"] is not inspect._empty: # noqa
+                    if handler.signature.annotations["value"] is not inspect._empty:  # noqa
                         try:
-                            consume_message.value = self._validate(handler, consume_message, handler.signature.annotations)
+                            consume_message.value = self._validate(
+                                handler, consume_message, handler.signature.annotations
+                            )
                             value = consume_message.value
                         except ValidationError as e:
                             logger.error(e)
@@ -166,8 +172,10 @@ class Kafka:
                 topics_handlers.append(handlers)
 
             if self.order_processing:
-                for handlers in zip_longest(*topics_handlers, fillvalue=None): # noqa
-                    coroutines = [handler for handler in handlers if handler is not None]
+                for handlers in zip_longest(*topics_handlers, fillvalue=None):  # noqa
+                    coroutines = [
+                        handler for handler in handlers if handler is not None
+                    ]
                     await self._start_handlers_coroutine(*coroutines)
 
             else:

@@ -24,14 +24,14 @@ class Message:
 
 class Subscriber(NamedTuple):
     topics: list[str]
-    reader: 'Reader'
+    reader: "Reader"
 
 
 class Reader:
     def __init__(
         self,
         config: ReaderConfig,
-        timeout: float = .001,
+        timeout: float = 0.001,
         *,
         timeout_tasks: float = 1,
         max_queue_size: int = 3,
@@ -42,9 +42,9 @@ class Reader:
             "group.id": self._config.group_id,  # Идентификатор группы потребителей
             "auto.offset.reset": self._config.auto_offset_reset,  # Положение смещения, если смещение не найдено
             "enable.auto.commit": self._config.enable_auto_commit,  # Включить автоматическое подтверждение смещения
-            "auto.commit.interval.ms": self._config.auto_commit_interval_ms,# Интервал автоподтверждения смещения (в миллисекундах)
-            "session.timeout.ms": self._config.session_timeout_ms,# Время ожидания, после которого группа считается недействительной
-            "max.partition.fetch.bytes": self._config.max_partition_fetch_bytes, # Максимальный размер данных из одной партиции (в байтах)
+            "auto.commit.interval.ms": self._config.auto_commit_interval_ms,  # Интервал автоподтверждения смещения (в миллисекундах)
+            "session.timeout.ms": self._config.session_timeout_ms,  # Время ожидания, после которого группа считается недействительной
+            "max.partition.fetch.bytes": self._config.max_partition_fetch_bytes,  # Максимальный размер данных из одной партиции (в байтах)
             "max.poll.interval.ms": self._config.max_poll_interval_ms,  # Максимальное время между вызовами poll()
             "fetch.min.bytes": self._config.fetch_min_bytes,  # Минимальный объем данных, который должен быть возвращен
             "client.id": self._config.client_id,  # Идентификатор клиента
@@ -63,7 +63,9 @@ class Reader:
         self._lock = asyncio.Lock()
         self._name = f"Reader-{SerialNumberGenerator().counter}"
 
-        logger.info(f"Reader '{self._name}' created with group.id {self._config.group_id}")
+        logger.info(
+            f"Reader '{self._name}' created with group.id {self._config.group_id}"
+        )
 
     @property
     def is_running(self) -> bool:
@@ -104,7 +106,7 @@ class Reader:
                 self._consumer.commit,
                 args=(),
                 asynchronous=asynchronous,
-                offsets=topics_partitions
+                offsets=topics_partitions,
             )
 
         logger.info(f"Reader: '{self._name}' commit scheduled.")
@@ -130,7 +132,7 @@ class Reader:
                     continue
 
                 if message.error():
-                    if message.error() == KafkaError._PARTITION_EOF:    # noqa
+                    if message.error() == KafkaError._PARTITION_EOF:  # noqa
                         continue
 
                     logger.error(f"Consume error: {message.error()}")

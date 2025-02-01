@@ -30,7 +30,7 @@ class PublisherConfig(BaseModel):
     buffer_memory: int = Field(default=33554432)  # Объем памяти для буфера
     compression_type: Optional[Literal["none", "gzip", "snappy", "lz4", "zstd"]] = Field(default="none")  # Тип сжатия
     max_in_flight_requests_per_connection: int = Field(default=5)  # Максимальное количество запросов
-    security_protocol: Optional[Literal["plaintext", "ssl", "sasl_plaintext", "sasl_ssl"]] = Field(default="plaintext")  # ПNamedTupleзопасности
+    security_protocol: Optional[Literal["plaintext", "ssl", "sasl_plaintext", "sasl_ssl"]] = Field(default="plaintext")
 
 
 class KafkaConfig(BaseModel):
