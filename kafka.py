@@ -37,7 +37,7 @@ class Kafka:
         self._background_processing_tasks: list[Task] = []
         self.order_processing = order_processing
         self._name = name
-        self._default_parser = default_parser
+        self._default_parser = default_parser()
 
     @property
     def config(self) -> KafkaConfig:
@@ -138,10 +138,9 @@ class Kafka:
                 if topic not in coro_handlers:
                     coro_handlers[topic] = []
 
-                value = self._default_parser().parse(message.value())
                 consume_message = Message(
                     topic=message.topic(),
-                    value=value,
+                    value=self._default_parser.parse(message.value()),
                     offset=message.offset(),
                     partition=message.partition(),
                     key=message.key(),
@@ -154,7 +153,6 @@ class Kafka:
                             consume_message.value = self._validate(
                                 handler, consume_message, handler.signature.annotations
                             )
-                            value = consume_message.value
                         except ValidationError as e:
                             logger.error(e)
                             continue
@@ -162,7 +160,7 @@ class Kafka:
                 coro_handlers[topic].append(
                     run_async_thread(
                         handler.handler,
-                        args=(value, consume_message),
+                        args=(consume_message.value, consume_message),
                     )
                 )
 

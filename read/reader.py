@@ -2,7 +2,7 @@ import asyncio
 from asyncio import Task
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import NamedTuple, Optional, Union, TypeVar, Generic
+from typing import NamedTuple, Optional, Union
 
 from confluent_kafka import Consumer as ConfluentConsumer, TopicPartition, KafkaError
 from pydantic import BaseModel
