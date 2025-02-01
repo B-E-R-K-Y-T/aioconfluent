@@ -2,22 +2,26 @@ import asyncio
 from asyncio import Task
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Union, TypeVar, Generic
 
 from confluent_kafka import Consumer as ConfluentConsumer, TopicPartition, KafkaError
+from pydantic import BaseModel
 
 from util.log import logger
 from util.util import run_async, run_async_thread, SerialNumberGenerator
 
+_VM = TypeVar("_VM", bound=BaseModel)
+
 
 @dataclass
-class Message:
+class Message(Generic[_VM]):
     topic: str
-    value: bytes
+    value: Union[dict, BaseModel]
     key: bytes = field(default=b"")
     offset: Optional[int] = field(default=None)
     partition: Optional[int] = field(default=None)
     timestamp: datetime = field(default=datetime.now())
+    validator: _VM = field(default_factory=lambda: type(_VM))
 
 
 class Subscriber(NamedTuple):

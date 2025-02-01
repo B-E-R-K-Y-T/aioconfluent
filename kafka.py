@@ -1,36 +1,48 @@
 import asyncio
+import inspect
 from asyncio import Task
 from itertools import zip_longest
-from typing import Union, Literal, Callable, NamedTuple, Optional, Coroutine
+from typing import Union, Literal, Callable, NamedTuple, Optional, Coroutine, Type, Any
+
+from pydantic import BaseModel, ValidationError
 
 from exceptions import BackgroundProcessingException
+from util.parse import AbstractParser, DefaultParser
 from publish.publisher import Publisher
 from read.reader import Subscriber, Reader, Message
 from util.log import logger
 from util.util import gen_unique_id, run_async_thread
 
 
+class HandlerMetadata(NamedTuple):
+    value: Any
+    message: Any
+    annotations: dict
+
+
 class Handler(NamedTuple):
     handler: Callable
     subscriber: Subscriber
+    metadata: HandlerMetadata
 
 
 class Kafka:
     def __init__(
-        self,
-        bootstrap_servers: Union[str, list] = "localhost:9092",
-        group_id: str = f"aio-confluent-group-{gen_unique_id()}",
-        auto_offset_reset: Literal["earliest", "latest", "none"] = "earliest",
-        enable_auto_commit: bool = True,
-        auto_commit_interval_ms: int = 5000,
-        session_timeout_ms: int = 30000,
-        max_poll_records: int = 500,
-        max_partition_fetch_bytes: int = 1048576,
-        max_poll_interval_ms: int = 60000,
-        fetch_min_bytes: int = 1,
-        *,
-        name: str = f"aio-confluent-kafka-client-{gen_unique_id()}",
-        order_processing: bool = False,
+            self,
+            bootstrap_servers: Union[str, list] = "localhost:9092",
+            group_id: str = f"aio-confluent-group-{gen_unique_id()}",
+            auto_offset_reset: Literal["earliest", "latest", "none"] = "earliest",
+            enable_auto_commit: bool = True,
+            auto_commit_interval_ms: int = 5000,
+            session_timeout_ms: int = 30000,
+            max_poll_records: int = 500,
+            max_partition_fetch_bytes: int = 1048576,
+            max_poll_interval_ms: int = 60000,
+            fetch_min_bytes: int = 1,
+            *,
+            name: str = f"aio-confluent-kafka-client-{gen_unique_id()}",
+            order_processing: bool = False,
+            default_parser: Type[AbstractParser] = DefaultParser,
     ):
         self._bootstrap_servers = bootstrap_servers
         self._group_id = group_id
@@ -65,6 +77,7 @@ class Kafka:
         self._background_processing_tasks: list[Task] = []
         self.order_processing = order_processing
         self._name = name
+        self._default_parser = default_parser
 
     @property
     def name(self):
@@ -99,7 +112,7 @@ class Kafka:
         subscriber = self.subscribe(topics)
 
         def decorator(func: Callable):
-            self._handlers.append(Handler(func, subscriber))
+            self._handlers.append(Handler(func, subscriber, get_function_metadata(func)))
             return func
 
         return decorator
@@ -136,6 +149,23 @@ class Kafka:
             logger.error(f"Error: {e}")
             raise BackgroundProcessingException(e) from e
 
+    @staticmethod
+    def _validate(handler: Handler, consume_message: Message, handler_annotations) -> bool:
+        validator: Type[BaseModel] = handler_annotations["value"]
+
+        if not isinstance(validator, type(BaseModel)):
+            raise ValueError(
+                f"Handler {handler.handler.__name__} must have 'value' argument of type BaseModel"
+            )
+
+        try:
+            consume_message.value = validator(**consume_message.value)
+        except ValidationError as e:
+            logger.error(e)
+            return False
+
+        return True
+
     async def _runner(self, handler: Handler):
         while self._is_running:
             coro_handlers: dict[str, list[Coroutine]] = {}
@@ -146,21 +176,28 @@ class Kafka:
                 if topic not in coro_handlers:
                     coro_handlers[topic] = []
 
+                value = self._default_parser().parse(message.value())
+                consume_message = Message(
+                    topic=message.topic(),
+                    value=value,
+                    offset=message.offset(),
+                    partition=message.partition(),
+                    key=message.key(),
+                    timestamp=message.timestamp(),
+                )
+
+                if handler.metadata.annotations:
+                    if handler.metadata.annotations["value"] is not inspect._empty:
+                        if not self._validate(handler, consume_message, handler.metadata.annotations):
+                            continue
+
                 coro_handlers[topic].append(
                     run_async_thread(
                         handler.handler,
-                        args=(
-                            Message(
-                                topic=message.topic(),
-                                value=message.value(),
-                                offset=message.offset(),
-                                partition=message.partition(),
-                                key=message.key(),
-                                timestamp=message.timestamp(),
-                            ),
-                        ),
+                        args=(value, consume_message),
                     )
                 )
+
             topics_handlers = []
 
             for handlers in coro_handlers.values():
@@ -176,3 +213,33 @@ class Kafka:
                     self._background_processing_tasks.append(
                         asyncio.create_task(self._start_handlers_coroutine(*handlers_))
                     )
+
+
+def get_function_metadata(handler: Callable):
+    signature = inspect.signature(handler)
+    value = None
+    message = None
+    annotations = {}
+
+    for param in signature.parameters.values():
+        if param.name == "value":
+            value = param
+        elif param.name == "message":
+            message = param
+
+        annotations[param.name] = param.annotation
+
+    if value is None:
+        raise ValueError(f"Handler {handler.__name__} must have 'value' argument")
+
+    if message is None:
+        raise ValueError(f"Handler {handler.__name__} must have 'message' argument")
+
+    if message.annotation is not Message:
+        raise ValueError(f"Handler {handler.__name__} must have 'message' argument of type Message")
+
+    return HandlerMetadata(
+        value=value,
+        message=message,
+        annotations=annotations,
+    )
