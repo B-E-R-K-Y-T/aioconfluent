@@ -12,7 +12,7 @@ async def run_async_thread(func: Callable, args: tuple, **kwargs):
         return await func(*args, **kwargs)
 
     async with _semaphore_thread:
-        return await asyncio.to_thread(func, args, **kwargs)
+        return await asyncio.to_thread(func, *args, **kwargs)
 
 
 async def run_async(func: Callable, args: tuple, **kwargs):

@@ -7,21 +7,19 @@ from typing import NamedTuple, Optional, Union, TypeVar, Generic
 from confluent_kafka import Consumer as ConfluentConsumer, TopicPartition, KafkaError
 from pydantic import BaseModel
 
+from read.config import ReaderConfig
 from util.log import logger
 from util.util import run_async, run_async_thread, SerialNumberGenerator
 
-_VM = TypeVar("_VM", bound=BaseModel)
-
 
 @dataclass
-class Message(Generic[_VM]):
+class Message:
     topic: str
-    value: Union[dict, BaseModel]
+    value: Union[bytes, dict, BaseModel]
     key: bytes = field(default=b"")
     offset: Optional[int] = field(default=None)
     partition: Optional[int] = field(default=None)
     timestamp: datetime = field(default=datetime.now())
-    validator: _VM = field(default_factory=lambda: type(_VM))
 
 
 class Subscriber(NamedTuple):
@@ -32,27 +30,40 @@ class Subscriber(NamedTuple):
 class Reader:
     def __init__(
         self,
-        config: dict,
+        config: ReaderConfig,
         timeout: float = .001,
         *,
-        max_poll_records: int = 500,
         timeout_tasks: float = 1,
-        max_queue_size: int = 10,
+        max_queue_size: int = 3,
     ):
+        self._config = config
+        self._config_dict = {
+            "bootstrap.servers": self._config.bootstrap_servers,  # Адрес(а) Kafka брокера(ов)
+            "group.id": self._config.group_id,  # Идентификатор группы потребителей
+            "auto.offset.reset": self._config.auto_offset_reset,  # Положение смещения, если смещение не найдено
+            "enable.auto.commit": self._config.enable_auto_commit,  # Включить автоматическое подтверждение смещения
+            "auto.commit.interval.ms": self._config.auto_commit_interval_ms,# Интервал автоподтверждения смещения (в миллисекундах)
+            "session.timeout.ms": self._config.session_timeout_ms,# Время ожидания, после которого группа считается недействительной
+            "max.partition.fetch.bytes": self._config.max_partition_fetch_bytes, # Максимальный размер данных из одной партиции (в байтах)
+            "max.poll.interval.ms": self._config.max_poll_interval_ms,  # Максимальное время между вызовами poll()
+            "fetch.min.bytes": self._config.fetch_min_bytes,  # Минимальный объем данных, который должен быть возвращен
+            "client.id": self._config.client_id,  # Идентификатор клиента
+            "isolation.level": self._config.isolation_level,  # Уровень изоляции
+        }
+
         self._is_running = False
-        self._max_poll_records = max_poll_records
+        self._max_poll_records = self._config.max_poll_records
         self._consumers: Optional[list[ConfluentConsumer]] = None
         self._read_task: Optional[Task] = None
-        self._config = config
         self._topics: Optional[list[str]] = None
-        self._consumer = ConfluentConsumer(self._config)
+        self._consumer = ConfluentConsumer(self._config_dict)
         self._timeout = timeout
         self._timeout_tasks = timeout_tasks
         self._messages_queue = asyncio.Queue(maxsize=max_queue_size)
         self._lock = asyncio.Lock()
         self._name = f"Reader-{SerialNumberGenerator().counter}"
 
-        logger.info(f"Reader '{self._name}' created with group.id {self._config['group.id']}")
+        logger.info(f"Reader '{self._name}' created with group.id {self._config.group_id}")
 
     @property
     def is_running(self) -> bool:
@@ -140,7 +151,7 @@ class Reader:
                         )
                     except asyncio.QueueFull:
                         logger.debug("Queue is full. Waiting...")
-                        await asyncio.sleep(.001)
+                        await asyncio.sleep(self._timeout)
                         continue
                     else:
                         break
